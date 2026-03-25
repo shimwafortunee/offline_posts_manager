@@ -1,7 +1,6 @@
 // main.dart
 import 'package:flutter/material.dart';
 import 'database_helper.dart';
-import 'post.dart';
 
 void main() {
   runApp(MyApp());
@@ -12,81 +11,129 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: PostListScreen(),
+      home: HomeScreen(),
     );
   }
 }
 
-class PostListScreen extends StatefulWidget {
+class HomeScreen extends StatefulWidget {
   @override
-  _PostListScreenState createState() => _PostListScreenState();
+  _HomeScreenState createState() => _HomeScreenState();
 }
 
-class _PostListScreenState extends State<PostListScreen> {
-  List<Post> posts = [];
-  List<Post> filteredPosts = [];
+class _HomeScreenState extends State<HomeScreen> {
+  List<Map<String, dynamic>> posts = [];
+  List<Map<String, dynamic>> filteredPosts = [];
+  TextEditingController searchController = TextEditingController();
+
+  bool showFavoritesOnly = false;
 
   @override
   void initState() {
     super.initState();
-    loadPosts();
+    fetchPosts();
   }
 
-  void loadPosts() async {
-    posts = await DatabaseHelper.instance.getPosts();
-    filteredPosts = posts;
-    setState(() {});
+  void fetchPosts() async {
+    final data = await DatabaseHelper.instance.getPosts();
+
+    setState(() {
+      posts = data;
+
+      if (showFavoritesOnly) {
+        filteredPosts =
+            data.where((post) => post['isFavorite'] == 1).toList();
+      } else {
+        filteredPosts = data;
+      }
+    });
   }
 
-  void search(String query) {
-    filteredPosts = posts
-        .where((p) =>
-            p.title.toLowerCase().contains(query.toLowerCase()))
-        .toList();
-    setState(() {});
+  void searchPosts(String query) {
+    List<Map<String, dynamic>> baseList = showFavoritesOnly
+        ? posts.where((post) => post['isFavorite'] == 1).toList()
+        : posts;
+
+    final results = baseList.where((post) {
+      return post['title']
+          .toLowerCase()
+          .contains(query.toLowerCase());
+    }).toList();
+
+    setState(() {
+      filteredPosts = results;
+    });
   }
 
   void deletePost(int id) async {
     await DatabaseHelper.instance.deletePost(id);
-    loadPosts();
+    fetchPosts();
   }
 
-  void toggleFavorite(Post post) async {
-    post.isFavorite = post.isFavorite == 1 ? 0 : 1;
-    await DatabaseHelper.instance.updatePost(post);
-    loadPosts();
+  void toggleFavorite(Map<String, dynamic> post) async {
+    int newValue = post['isFavorite'] == 1 ? 0 : 1;
+
+    await DatabaseHelper.instance.updatePost(post['id'], {
+      'title': post['title'],
+      'content': post['content'],
+      'isFavorite': newValue,
+    });
+
+    fetchPosts();
   }
 
-  void goToAdd() async {
-    final result = await Navigator.push(
-        context, MaterialPageRoute(builder: (_) => AddEditScreen()));
-
-    if (result == true) loadPosts();
+  void showDeleteDialog(int id) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text("Delete Post"),
+        content: Text("Are you sure you want to delete this post?"),
+        actions: [
+          TextButton(
+            child: Text("Cancel"),
+            onPressed: () => Navigator.pop(context),
+          ),
+          TextButton(
+            child: Text("Delete"),
+            onPressed: () {
+              deletePost(id);
+              Navigator.pop(context);
+            },
+          ),
+        ],
+      ),
+    );
   }
 
-  void goToEdit(Post post) async {
-    final result = await Navigator.push(
-        context,
-        MaterialPageRoute(
-            builder: (_) => AddEditScreen(post: post)));
-
-    if (result == true) loadPosts();
+  void openForm([Map<String, dynamic>? post]) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PostForm(post: post),
+      ),
+    );
+    fetchPosts();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Offline Posts Manager"),
+        title: Text(
+          showFavoritesOnly ? "Favorite Posts ⭐" : "All Posts",
+        ),
         actions: [
           IconButton(
-            icon: Icon(Icons.star),
+            icon: Icon(
+              showFavoritesOnly ? Icons.star : Icons.star_border,
+            ),
             onPressed: () {
-              filteredPosts =
-                  posts.where((p) => p.isFavorite == 1).toList();
-              setState(() {});
+              setState(() {
+                showFavoritesOnly = !showFavoritesOnly;
+              });
+              fetchPosts();
             },
-          )
+          ),
         ],
       ),
       body: Column(
@@ -94,11 +141,12 @@ class _PostListScreenState extends State<PostListScreen> {
           Padding(
             padding: EdgeInsets.all(10),
             child: TextField(
-              onChanged: search,
+              controller: searchController,
               decoration: InputDecoration(
-                labelText: "Search",
+                hintText: "Search...",
                 border: OutlineInputBorder(),
               ),
+              onChanged: searchPosts,
             ),
           ),
           Expanded(
@@ -106,32 +154,38 @@ class _PostListScreenState extends State<PostListScreen> {
                 ? Center(child: Text("No Posts Found"))
                 : ListView.builder(
                     itemCount: filteredPosts.length,
-                    itemBuilder: (_, i) {
-                      final post = filteredPosts[i];
+                    itemBuilder: (_, index) {
+                      final post = filteredPosts[index];
+
                       return Card(
                         child: ListTile(
-                          title: Text(post.title),
-                          subtitle: Text(post.content),
+                          title: Text(post['title']),
+                          subtitle: Text(post['content']),
+
+                          // Favorite icon
+                          leading: IconButton(
+                            icon: Icon(
+                              post['isFavorite'] == 1
+                                  ? Icons.star
+                                  : Icons.star_border,
+                              color: Colors.orange,
+                            ),
+                            onPressed: () => toggleFavorite(post),
+                          ),
+
+                          onTap: () => openForm(post),
+
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
-                                icon: Icon(
-                                  post.isFavorite == 1
-                                      ? Icons.star
-                                      : Icons.star_border,
-                                ),
-                                onPressed: () =>
-                                    toggleFavorite(post),
+                                icon: Icon(Icons.edit, color: Colors.blue),
+                                onPressed: () => openForm(post),
                               ),
                               IconButton(
-                                icon: Icon(Icons.edit),
-                                onPressed: () => goToEdit(post),
-                              ),
-                              IconButton(
-                                icon: Icon(Icons.delete),
+                                icon: Icon(Icons.delete, color: Colors.red),
                                 onPressed: () =>
-                                    deletePost(post.id!),
+                                    showDeleteDialog(post['id']),
                               ),
                             ],
                           ),
@@ -143,80 +197,77 @@ class _PostListScreenState extends State<PostListScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: goToAdd,
         child: Icon(Icons.add),
+        onPressed: () => openForm(),
       ),
     );
   }
 }
 
-// ADD / EDIT SCREEN
+class PostForm extends StatefulWidget {
+  final Map<String, dynamic>? post;
 
-class AddEditScreen extends StatefulWidget {
-  final Post? post;
-
-  AddEditScreen({this.post});
+  PostForm({this.post});
 
   @override
-  _AddEditScreenState createState() => _AddEditScreenState();
+  _PostFormState createState() => _PostFormState();
 }
 
-class _AddEditScreenState extends State<AddEditScreen> {
-  final title = TextEditingController();
-  final content = TextEditingController();
+class _PostFormState extends State<PostForm> {
+  TextEditingController titleController = TextEditingController();
+  TextEditingController contentController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
+
     if (widget.post != null) {
-      title.text = widget.post!.title;
-      content.text = widget.post!.content;
+      titleController.text = widget.post!['title'];
+      contentController.text = widget.post!['content'];
     }
   }
 
-  void save() async {
-    if (title.text.isEmpty || content.text.isEmpty) return;
+  void savePost() async {
+    final data = {
+      'title': titleController.text,
+      'content': contentController.text,
+      'isFavorite': widget.post?['isFavorite'] ?? 0,
+    };
 
     if (widget.post == null) {
-      await DatabaseHelper.instance.insertPost(
-        Post(
-          title: title.text,
-          content: content.text,
-          createdAt: DateTime.now().toString(),
-        ),
-      );
+      await DatabaseHelper.instance.insertPost(data);
     } else {
-      await DatabaseHelper.instance.updatePost(
-        Post(
-          id: widget.post!.id,
-          title: title.text,
-          content: content.text,
-          createdAt: widget.post!.createdAt,
-          isFavorite: widget.post!.isFavorite,
-        ),
-      );
+      await DatabaseHelper.instance
+          .updatePost(widget.post!['id'], data);
     }
 
-    Navigator.pop(context, true);
+    Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar:
-          AppBar(title: Text(widget.post == null ? "Add" : "Edit")),
+      appBar: AppBar(
+        title:
+            Text(widget.post == null ? "Add Post" : "Edit Post"),
+      ),
       body: Padding(
         padding: EdgeInsets.all(16),
         child: Column(
           children: [
             TextField(
-                controller: title,
-                decoration: InputDecoration(labelText: "Title")),
+              controller: titleController,
+              decoration: InputDecoration(labelText: "Title"),
+            ),
             TextField(
-                controller: content,
-                decoration: InputDecoration(labelText: "Content")),
+              controller: contentController,
+              decoration: InputDecoration(labelText: "Content"),
+            ),
             SizedBox(height: 20),
-            ElevatedButton(onPressed: save, child: Text("Save"))
+            ElevatedButton(
+              child: Text("Save"),
+              onPressed: savePost,
+            ),
           ],
         ),
       ),

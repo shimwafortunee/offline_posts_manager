@@ -1,7 +1,6 @@
 // database_helper.dart
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
-import 'post.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -28,63 +27,51 @@ class DatabaseHelper {
 
   Future _createDB(Database db, int version) async {
     await db.execute('''
-    CREATE TABLE posts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT,
-      content TEXT,
-      createdAt TEXT,
-      isFavorite INTEGER
-    )
+      CREATE TABLE posts(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        content TEXT,
+        isFavorite INTEGER
+      )
     ''');
 
-    // 🔥 DEFAULT POSTS
+    // Default posts
     await db.insert('posts', {
-      'title': 'Welcome 🚀',
-      'content': 'This app works offline using SQLite',
-      'createdAt': DateTime.now().toString(),
-      'isFavorite': 1,
+      'title': 'Welcome',
+      'content': 'Start managing your posts offline.',
+      'isFavorite': 0
     });
 
     await db.insert('posts', {
-      'title': 'Assignment Ready',
-      'content': 'CRUD operations are fully working',
-      'createdAt': DateTime.now().toString(),
-      'isFavorite': 0,
+      'title': 'Study Tip',
+      'content': 'Review your notes daily.',
+      'isFavorite': 1
+    });
+
+    await db.insert('posts', {
+      'title': 'Reminder',
+      'content': 'Submit your assignment on time.',
+      'isFavorite': 0
     });
   }
 
-  Future<List<Post>> getPosts() async {
+  Future<List<Map<String, dynamic>>> getPosts() async {
     final db = await instance.database;
-    final result = await db.query('posts');
-
-    // 🔥 Auto-fix if empty
-    if (result.isEmpty) {
-      await db.insert('posts', {
-        'title': 'Auto Fix Post',
-        'content': 'Database was empty, so this was added',
-        'createdAt': DateTime.now().toString(),
-        'isFavorite': 0,
-      });
-
-      final newResult = await db.query('posts');
-      return newResult.map((e) => Post.fromMap(e)).toList();
-    }
-
-    return result.map((e) => Post.fromMap(e)).toList();
+    return await db.query('posts', orderBy: 'id DESC');
   }
 
-  Future<int> insertPost(Post post) async {
+  Future<int> insertPost(Map<String, dynamic> post) async {
     final db = await instance.database;
-    return await db.insert('posts', post.toMap());
+    return await db.insert('posts', post);
   }
 
-  Future<int> updatePost(Post post) async {
+  Future<int> updatePost(int id, Map<String, dynamic> post) async {
     final db = await instance.database;
     return await db.update(
       'posts',
-      post.toMap(),
+      post,
       where: 'id = ?',
-      whereArgs: [post.id],
+      whereArgs: [id],
     );
   }
 
